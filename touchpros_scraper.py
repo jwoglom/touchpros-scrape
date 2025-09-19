@@ -275,6 +275,18 @@ class TouchProsScraper:
             processed += 1
             since_write += 1
 
+            if (
+                processed == 1
+                or processed % write_interval == 0
+                or not self.queue
+            ):
+                logging.info(
+                    "Sitemap progress: processed %s pages (last: %s), %s remaining in queue",
+                    processed,
+                    page.path,
+                    len(self.queue),
+                )
+
             if since_write >= write_interval:
                 self._write_sitemap(sitemap_path)
                 since_write = 0
@@ -305,6 +317,7 @@ class TouchProsScraper:
         self.manifest_entries = []
         processed = 0
         since_write = 0
+        total_entries = len(entries)
 
         for entry in entries:
             page = Page(
@@ -327,6 +340,18 @@ class TouchProsScraper:
             self.manifest_entries.append(manifest_entry)
             processed += 1
             since_write += 1
+
+            if (
+                processed == 1
+                or processed == total_entries
+                or processed % write_interval == 0
+            ):
+                logging.info(
+                    "Content fetch progress: downloaded %s of %s pages (last: %s)",
+                    processed,
+                    total_entries,
+                    entry.path,
+                )
 
             if since_write >= write_interval:
                 self._write_manifest(manifest_path)
