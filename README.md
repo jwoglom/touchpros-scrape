@@ -47,5 +47,7 @@ YouTube videos (downloaded through `yt-dlp`) under `_assets/<host>/...`.
   whose name combines a slugified label and a short hash of the API path.
 - All assets are stored once under `_assets/<host>/...` and referenced from the
   generated `content_manifest.json` file.
+- Each page directory also contains symlinks to the assets it references so
+  they are easy to discover when browsing the exported folder tree.
 - The tool respects the TouchPros JSON API but gracefully falls back to parsing
   HTML fragments when the API returns pre-rendered markup.

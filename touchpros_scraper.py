@@ -19,6 +19,7 @@ import collections
 import hashlib
 import json
 import logging
+import os
 import re
 import subprocess
 import time
@@ -484,6 +485,8 @@ class TouchProsScraper:
             + self._download_gallery_items(page_data)
         )
 
+        self._link_page_assets(page_dir, assets)
+
         return {
             "data_file": str(json_path.relative_to(self.output_dir)),
             "assets": assets,
@@ -494,6 +497,8 @@ class TouchProsScraper:
         html_path.write_text(page_data.text or "", encoding="utf-8")
 
         assets = self._deduplicate_assets(self._download_resources(page_data.resource_urls))
+
+        self._link_page_assets(page_dir, assets)
 
         return {
             "data_file": str(html_path.relative_to(self.output_dir)),
@@ -564,6 +569,82 @@ class TouchProsScraper:
             seen.add(key)
             deduped.append(item)
         return deduped
+
+    def _link_page_assets(self, page_dir: Path, assets: Iterable[Dict[str, str]]) -> None:
+        for asset in assets:
+            relative_path = asset.get("path")
+            if not relative_path:
+                continue
+
+            asset_path = self.output_dir / relative_path
+            if not asset_path.exists():
+                logging.debug("Skipping symlink creation for missing asset %s", asset_path)
+                continue
+
+            link_path = self._select_symlink_destination(page_dir, asset_path)
+            if link_path is None:
+                continue
+
+            try:
+                self._create_symlink(link_path, asset_path)
+            except OSError as exc:
+                logging.warning("Unable to create symlink for %s -> %s: %s", link_path, asset_path, exc)
+                continue
+
+            try:
+                asset["symlink"] = str(link_path.relative_to(self.output_dir))
+            except ValueError:
+                asset["symlink"] = str(link_path)
+
+    def _select_symlink_destination(self, page_dir: Path, asset_path: Path) -> Optional[Path]:
+        base_name = asset_path.name
+        if not base_name:
+            logging.debug("Skipping asset without a file name for symlink: %s", asset_path)
+            return None
+
+        candidate = page_dir / base_name
+        if self._symlink_points_to(candidate, asset_path):
+            return candidate
+        if candidate.is_symlink() or not candidate.exists():
+            return candidate
+
+        suffix = "".join(Path(base_name).suffixes)
+        if suffix:
+            stem = base_name[: -len(suffix)]
+        else:
+            stem = base_name
+        stem = stem.strip(".") or "asset"
+
+        for index in range(1, 1000):
+            new_name = f"{stem}_{index}{suffix}"
+            candidate = page_dir / new_name
+            if self._symlink_points_to(candidate, asset_path):
+                return candidate
+            if candidate.is_symlink() or not candidate.exists():
+                return candidate
+
+        logging.warning("Unable to allocate symlink name for %s in %s", asset_path, page_dir)
+        return None
+
+    @staticmethod
+    def _symlink_points_to(link_path: Path, asset_path: Path) -> bool:
+        if not link_path.is_symlink():
+            return False
+        try:
+            return link_path.resolve() == asset_path.resolve()
+        except FileNotFoundError:
+            return False
+
+    @staticmethod
+    def _create_symlink(link_path: Path, target: Path) -> None:
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        if link_path.is_symlink():
+            link_path.unlink()
+        elif link_path.exists():
+            raise OSError(f"Destination already exists: {link_path}")
+
+        relative_target = os.path.relpath(target, start=link_path.parent)
+        link_path.symlink_to(relative_target)
 
     def _compute_dir_name(self, page: Page) -> str:
         label = page.label or page.path
