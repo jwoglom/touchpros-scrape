@@ -35,6 +35,7 @@ from typing import Any, Deque, Dict, Iterable, List, Optional, Set, Tuple
 
 LINK_TAGS = {"a", "area"}
 RESOURCE_ATTRS = {"src", "data-src", "data-original", "poster", "href"}
+HREF_LIKE_ATTR_RE = re.compile(r"\b(?:href|data-href)\s*=\s*['\"]([^'\"]+)['\"]", re.IGNORECASE)
 STYLE_URL_RE = re.compile(r"url\(([^)]+)\)")
 ABSOLUTE_URL_RE = re.compile(r"https?://[\w\-./?%&#=:+]+", re.IGNORECASE)
 HASH_LENGTH = 10
@@ -766,8 +767,17 @@ class TouchProsScraper:
     def _parse_html_fragment(self, html_fragment: str, base_url: str) -> Tuple[List[Tuple[str, str]], Set[str]]:
         parser = LinkAndResourceParser()
         parser.feed(html_fragment)
+        parser.close()
         links = parser.links
         resources = set(parser.resources)
+
+        if HREF_LIKE_ATTR_RE.search(html_fragment):
+            existing_hrefs = {href for href, _ in links}
+            for match in HREF_LIKE_ATTR_RE.findall(html_fragment):
+                href = unescape(match)
+                if href not in existing_hrefs:
+                    links.append((href, ""))
+                    existing_hrefs.add(href)
 
         for match in ABSOLUTE_URL_RE.findall(html_fragment):
             resources.add(match)
